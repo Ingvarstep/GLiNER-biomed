@@ -1,0 +1,4 @@
+regex==2024.9.11
+spacy==3.8.2
+tqdm==4.66.6
+transformers==4.46.1
