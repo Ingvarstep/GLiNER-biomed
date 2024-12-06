@@ -22,19 +22,20 @@ logger = logging.getLogger(__name__)
 
 # Define the JSON Schema using Pydantic
 class EntitySchema(BaseModel):
-    id: str
+    id: int
+    text: str
     type: str
 
 
 class RelationSchema(BaseModel):
-    from_: str = Field(alias="from")
-    to: str
-    label: str
+    head: int
+    tail: int
+    type: str
 
 
 class JSONSchema(BaseModel):
-    nodes: List[EntitySchema]
-    edges: List[RelationSchema]
+    entities: List[EntitySchema]
+    relations: List[RelationSchema]
 
 
 def create_generation_prompt(
@@ -55,7 +56,10 @@ def create_generation_prompt(
     messages.append(
         {
             "role": "user",
-            "content": f'Please create a JSON for this text: "{text}"',
+            "content": (
+                f'Here is a text input: "{text}" '
+                "Analyze this text, identify the entities, and extract their relationships as per your instructions."
+            ),
         }
     )
     prompt = tokenizer.apply_chat_template(
