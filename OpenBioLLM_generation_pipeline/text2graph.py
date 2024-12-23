@@ -6,6 +6,7 @@ import logging
 from typing import List, Dict, Any, Tuple, Set
 
 from OblConfig import OblConfig
+from utils import extract_noun_chunks
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 from lmformatenforcer import JsonSchemaParser
@@ -15,6 +16,10 @@ from lmformatenforcer.integrations.vllm import (
 )
 from pydantic import BaseModel, Field
 import copy
+
+import spacy
+
+nlp = spacy.load('en_core_web_sm')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +43,7 @@ class JSONSchema(BaseModel):
     relations: List[RelationSchema]
 
 
-def create_generation_prompt(
+def create_generation_prompt_base(
     text: str, one_shot_messages: List[Dict[str, str]], tokenizer
 ) -> str:
     """
@@ -52,6 +57,7 @@ def create_generation_prompt(
     Returns:
         str: The generated prompt.
     """
+    print('Text tokens:', len(text)//4)
     messages = copy.deepcopy(one_shot_messages)
     messages.append(
         {
@@ -67,6 +73,37 @@ def create_generation_prompt(
     )
     return prompt
 
+
+def create_generation_prompt_spacy(
+    text: str, one_shot_messages: List[Dict[str, str]], tokenizer
+) -> str:
+    """
+    Creates a prompt for the LLM by appending the user text to the one-shot messages.
+
+    Args:
+        text (str): The input text to process.
+        one_shot_messages (List[Dict[str, str]]): A list of messages for the prompt.
+        tokenizer: The tokenizer used to apply the chat template.
+
+    Returns:
+        str: The generated prompt.
+    """
+    noun_chunks = extract_noun_chunks(nlp, text)
+    messages = copy.deepcopy(one_shot_messages)
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f'Here is a text input: "{text}" '
+                f"""Here is the list of input entities: {noun_chunks}\n"""
+                "Analyze this text, select and classify the entities, and extract their relationships as per your instructions."
+            ),
+        }
+    )
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    return prompt
 
 def load_texts(data_path: str, limit: int = None) -> List[str]:
     """
@@ -124,7 +161,7 @@ def initialize_model_and_tokenizer(obl_config: OblConfig) -> Tuple[LLM, Any]:
     max_model_len = obl_config.max_model_len
     tensor_parallel_size = obl_config.tensor_parallel_size
     chat_template = obl_config.chat_template
-
+    dtype = obl_config.dtype
     # Initialize the tokenizer
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     tokenizer.chat_template = chat_template
@@ -135,6 +172,7 @@ def initialize_model_and_tokenizer(obl_config: OblConfig) -> Tuple[LLM, Any]:
         tokenizer=tokenizer_name,
         max_model_len=max_model_len,
         tensor_parallel_size=tensor_parallel_size,
+        dtype=dtype
     )
 
     return llm, tokenizer
@@ -186,7 +224,7 @@ def define_sampling_params(
 
 
 def generate_batch_prompts(
-    batch_texts: List[str], one_shot_messages: List[Dict[str, str]], tokenizer
+    batch_texts: List[str], one_shot_messages: List[Dict[str, str]], tokenizer, task_type: str
 ) -> List[str]:
     """
     Generates prompts for a batch of texts.
@@ -201,7 +239,10 @@ def generate_batch_prompts(
     """
     batch_prompts = []
     for text in batch_texts:
-        prompt = create_generation_prompt(text, one_shot_messages, tokenizer)
+        if task_type=='base':
+            prompt = create_generation_prompt_base(text, one_shot_messages, tokenizer)
+        else:
+            prompt = create_generation_prompt_spacy(text, one_shot_messages, tokenizer)
         batch_prompts.append(prompt)
     return batch_prompts
 
@@ -224,6 +265,7 @@ def process_batch_outputs(
     for idx, (output, text) in zip(batch_indices, zip(outputs, batch_texts)):
         try:
             result_text = output.outputs[0].text.strip()
+            print(result_text)
             parsed_json = json.loads(result_text)
             batch_results.append(
                 {
@@ -281,7 +323,7 @@ def main():
     parser.add_argument(
         "--data_path",
         type=str,
-        default="./data/medmentions_text.json",
+        default="./data/bio_texts_balanced.json",
         help="Path to the data file",
     )
     parser.add_argument(
@@ -293,7 +335,7 @@ def main():
     parser.add_argument(
         "--limit",
         type=int,
-        default=None,
+        default=100,
         help="Maximum number of texts to process",
     )
     args = parser.parse_args()
@@ -338,6 +380,8 @@ def main():
 
     one_shot_messages = obl_config.one_shot_messages
 
+    task_type = obl_config.task_type
+
     # Process texts in batches
     num_unprocessed = len(unprocessed_indices)
     logger.info(f"Processing {num_unprocessed} unprocessed texts.")
@@ -351,7 +395,7 @@ def main():
         # Generate prompts for the current batch
         try:
             batch_prompts = generate_batch_prompts(
-                batch_texts, one_shot_messages, tokenizer
+                batch_texts, one_shot_messages, tokenizer, task_type
             )
         except Exception as e:
             logger.error(
@@ -365,6 +409,7 @@ def main():
         )
         try:
             outputs = llm.generate(batch_prompts, generation_args)
+            # print(outputs)
         except Exception as e:
             logger.error(
                 f"Error during generation for batch indices {batch_indices[0]} to {batch_indices[-1]}: {e}"

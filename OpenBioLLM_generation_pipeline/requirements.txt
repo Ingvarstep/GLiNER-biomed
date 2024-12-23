@@ -4,3 +4,4 @@ torch==2.4.0
 tqdm==4.67.0
 transformers==4.46.2
 vllm==0.6.3.post1
+spacy==3.8.0
