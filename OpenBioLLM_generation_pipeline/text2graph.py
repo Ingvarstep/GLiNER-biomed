@@ -3,6 +3,7 @@ import json
 import os
 import re
 import logging
+import pandas as pd
 from typing import List, Dict, Any, Tuple, Set
 
 from OblConfig import OblConfig
@@ -120,8 +121,12 @@ def load_texts(data_path: str, limit: int = None) -> List[str]:
         logger.error(f"Data file not found at {data_path}")
         return []
 
-    with open(data_path, "r", encoding="utf-8") as f:
-        texts = json.load(f)
+    if '.csv' in data_path:
+        texts = pd.read_csv(data_path)['text'].fillna('')
+        texts = [text for text in texts if text]
+    else:
+        with open(data_path, "r", encoding="utf-8") as f:
+            texts = json.load(f)
     if limit:
         texts = texts[:limit]
     return texts
