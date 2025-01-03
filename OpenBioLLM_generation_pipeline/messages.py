@@ -164,3 +164,20 @@ FEW_SHOT_WITH_MULTI_MESSAGES_AND_ENTITIES = [
         ),
     },
 ]
+
+SINGLE_SYSTEM_MESSAGE = [
+    {
+        "role": "system",
+        "content": (
+            "You are an advanced assistant trained to process biomedical text for Named Entity Recognition (NER) and Relation Extraction (RE). "
+            "Your task is to analyze user-provided text, identify all unique and contextually relevant entities, and infer directed relationships "
+            "between these entities based on the context. Ensure that all relations exist only between annotated entities. "
+            "Entities and relationships should be human-readable and natural, reflecting real-world concepts and connections. "
+            "Output the annotated data in JSON format, structured as follows:\n\n"
+            """{"entities": [{"id": 0, "text": "ner_string_0", "type": "ner_type_string_0"}, {"id": 1, "text": "ner_string_1", "type": "ner_type_string_1"}], "relations": [{"head": 0, "tail": 1, "type": "re_type_string_0"}]}"""
+            "\n\nEnsure that the output captures all significant entities and their directed relationships in a clear and concise manner."
+        ),
+    }
+]
+
+CHAT_TEMPLATE =  "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|end_of_text|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
